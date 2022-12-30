@@ -1,0 +1,11 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "eventbridge-lambda-sample"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1na429kanui3f"
+s3_prefix = "eventbridge-lambda-sample"
+region = "ap-northeast-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "Email=\"shun.92@gmail.com\" FunctionName=\"sample-lambda\""
+image_repositories = []

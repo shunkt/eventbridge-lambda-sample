@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >-
+  Auto stop instance
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Info
+        Parameters:
+          - FunctionName
+          - Email
+
+Parameters:
+  Email:
+    Type: String
+    ConstraintDescription: "Email address to be received notification sent by SNS"
+  FunctionName:
+    Type: String
+    Default: detect_idling_sagemaker_apps
+    ConstraintDescription: "Arbitrary Lambda function name"
+
+Resources:
+  SampleLambdaAppsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AWSLambdaBasicExecutionRole
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: logs:CreateLogGroup
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 
+                    - ${LogGroup}:*
+                    - LogGroup: !GetAtt SampleLambdaAppsLogGroup.Arn
+        - PolicyName: AllowSendNotificationViaSNS
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource:
+                  - !Ref NotificationSNS
+
+  NotificationSNS:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub ${FunctionName}-notification
+      TopicName: !Sub ${FunctionName}-notification
+      Subscription:
+        - Endpoint: !Ref Email
+          Protocol: email
+
+  SampleLambdaAppsLogGroup:
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Delete
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref FunctionName
+      RetentionInDays: 90
+
+  SampleLambdaApps:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: detect_idling_sagemaker_apps
+      Architectures:
+        - x86_64
+      MemorySize: 128
+      Timeout: 10
+      Runtime: python3.9
+      Handler: app.lambda_handler
+      Role: !GetAtt SampleLambdaAppsRole.Arn
+      PackageType: Zip
+      Environment:
+        Variables:
+          SNS_TOPIC: !Ref NotificationSNS
+      CodeUri: stop_lambda
+
+
+  SampleLambdaAppsInvokeEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: default
+      Name: InvokeSampleLambdaApps
+      ScheduleExpression: rate(10 minutes)
+      State: ENABLED
+      Targets:
+        - Id: !Ref FunctionName
+          Arn: !GetAtt SampleLambdaApps.Arn
+
+  PermissionInvokeLambda:
+   Type: AWS::Lambda::Permission
+   Properties:
+     Action: lambda:InvokeFunction
+     FunctionName: !Ref SampleLambdaApps
+     Principal: events.amazonaws.com
+     SourceArn: !GetAtt SampleLambdaAppsInvokeEvent.Arn
